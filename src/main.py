@@ -213,6 +213,9 @@ def createSentences(embed_list):
 
     return sentences_to_embed_dict
 
+def isURI(term):
+    return isinstance(term, URIRef) and not term.startswith("_:")
+
 
 # create embeddings from rdf triples
 def main(input_file: pathlib.Path, config_file: pathlib.Path, tsv_output, json_output, qdrant_url, collection_name):
@@ -245,7 +248,8 @@ def main(input_file: pathlib.Path, config_file: pathlib.Path, tsv_output, json_o
     all_subjects = set()
     triples, cardinality = doc.search((None, None, None))
     for s, p, o in triples:
-        all_subjects.add(s)
+        if isURI(s):
+            all_subjects.add(s)
     # convert the set to a list for chunking
     subject_list = list(all_subjects)
 
@@ -266,7 +270,7 @@ def main(input_file: pathlib.Path, config_file: pathlib.Path, tsv_output, json_o
                 # collect all the triples desired - as defined
                 # by the predicates listed in the config file
                 for s, p, o in triples:
-                    if str(p) in iri_values and isinstance(p, URIRef):
+                    if str(p) in iri_values and isURI(p):
                         # print(f"Found a match: {s}  {p}  {o}")
                         key = getIriKeyFromValue(iri_types, str(p))
                         embed_dict = {"config_key": key, "subject": str(s), "predicate": str(p), "object": str(o)}
