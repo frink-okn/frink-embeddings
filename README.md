@@ -2,7 +2,7 @@
 
 ### Example usage
 ```
-usage: python main.py [-h] -i INPUT -c CONF [-q QDRANT_URL] [--csv] [--json]
+usage: python main.py [-h] -i INPUT -c CONF [-q QDRANT_URL] [--tsv] [--json]
 
 frink-embeddings
 
