@@ -4,6 +4,8 @@ import sys
 import os
 import csv
 import json
+from logging import NullHandler
+
 import numpy as np
 import argparse
 import yaml
@@ -33,28 +35,30 @@ logging.basicConfig(
 
 
 # create embeddings and write to a tsv file
-def saveToTSV(model, input_file, sentences_to_embed_dict):
-    tsv_file = ""
-    embedding_list = []
+def saveToTSV(model, input_file, sentences_to_embed_dict, file):
+    tsv_file = os.path.splitext(os.path.basename(input_file))[0] + ".tsv"
+
     try:
         # create an embedding for each unique subject
         # and write to the tsv file
-        tsv_file = os.path.splitext(os.path.basename(input_file))[0] + ".tsv"
-        with open(tsv_file, "w", newline='') as f:
-            writer = csv.writer(f, delimiter='\t')
-            writer.writerow(['iri', 'label', 'embedding'])
-            for k, v in sentences_to_embed_dict.items():
-                embedding = model.encode(v)
-                writer.writerow([k, v, np.array2string(embedding, separator=', ').replace('\n', '')])
-        f.close()
-        logger.info(f"Saved embeddings to {tsv_file}")
+        # open the tsv output file if this is the first time through
+        if file is None:
+            file = open(tsv_file, 'w')
+        writer = csv.writer(file, delimiter='\t')
+        writer.writerow(['iri', 'label', 'embedding'])
+        for k, v in sentences_to_embed_dict.items():
+            embedding = model.encode(v)
+            writer.writerow([k, v, np.array2string(embedding, separator=', ').replace('\n', '')])
+
+        logger.info(f"Saved {len(sentences_to_embed_dict)} embeddings to {tsv_file}")
     except Exception as e:
         logger.error(f"An error occurred while save embedded data to the tsv file:{tsv_file} {e}")
 
+    return file
 
 # create embeddings and write to a json file that is in
 # a format suitable for uploading into a vector database
-def saveToJSON(model, input_file, sentences_to_embed_dict):
+def saveToJSON(model, input_file, sentences_to_embed_dict, file):
     global idx
     graph_name = os.path.splitext(os.path.basename(input_file))[0]
     json_file = os.path.splitext(os.path.basename(input_file))[0] + ".json"
@@ -69,13 +73,16 @@ def saveToJSON(model, input_file, sentences_to_embed_dict):
             embedded_dict = {"id": idx, "vector": embedding.tolist(), "payload": {"graph": graph_name, "iri": k, "label": v}}
             dict_list.append(embedded_dict)
 
-        with open(json_file, 'w') as f:
-            json.dump({'points': dict_list}, f, indent=3)
+        # open the json output file if this is the first time through
+        if file is None:
+            file = open(json_file, 'w')
+        json.dump({'points': dict_list}, file, indent=3)
 
-        f.close()
-        logger.info(f"Saved embeddings to {json_file}")
+        logger.info(f"Saved {len(dict_list)} embeddings to {json_file}")
     except Exception as e:
         logger.error(f"An error occurred while saving embedded data to the json file:{json_file} {e}")
+
+    return file
 
 # create an embedding for each unique subject
 # and write to a qdrant collection
@@ -221,6 +228,9 @@ def isURI(term):
 def main(input_file: pathlib.Path, config_file: pathlib.Path, tsv_output, json_output, qdrant_url, collection_name):
     logger.info(f"input: {input_file}  config: {config_file}")
 
+    tsvfile = None
+    jsonfile = None
+
     doc = HDTDocument(str(input_file), indexed=False)
     logger.info(f"subjects: {doc.nb_subjects}  predicates: {doc.nb_predicates}  objects: {doc.nb_objects}")
 
@@ -288,15 +298,22 @@ def main(input_file: pathlib.Path, config_file: pathlib.Path, tsv_output, json_o
         try:
             if sentences_to_embed_dict is not None:
                 if tsv_output:
-                    saveToTSV(model, input_file, sentences_to_embed_dict)
+                    tsvfile = saveToTSV(model, input_file, sentences_to_embed_dict, tsvfile)
 
                 if json_output:
-                    saveToJSON(model, input_file, sentences_to_embed_dict)
+                    jsonfile = saveToJSON(model, input_file, sentences_to_embed_dict, jsonfile)
 
                 if qdrant_url is not None:
                     saveToQdrant(model, qdrant_url, collection_name, input_file, sentences_to_embed_dict)
         except Exception as e:
             logger.error(f"An error occurred saving the embedded sentences: {e}")
+
+    # close up any open files
+    if tsvfile is not None:
+        tsvfile.close()
+    if jsonfile is not None:
+        jsonfile.close()
+
 
 
 if __name__ == '__main__':
