@@ -282,11 +282,10 @@ def main(input_file: pathlib.Path, config_file: pathlib.Path, mode: str, output:
             repr = representation_for_subject(subj, data, doc, conf_sets)
             embedding = model.encode(repr)
             yield subj, repr, embedding
-    if mode in {'tsv', 'json'}:
-        if mode == 'tsv':
-            write_tsv(gen(), output)
-        else:
-            write_json(gen(), output, graph_name)
+    if mode == 'tsv':
+        write_tsv(gen(), output)
+    elif mode == 'json':
+        write_json(gen(), output, graph_name)
     else:
         write_qdrant(gen(), output, collection_name, graph_name)
 
