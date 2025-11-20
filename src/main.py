@@ -124,32 +124,32 @@ def english_with_types(
     return f"{label_text}{type_text}{parent_text}"
 
 
-def write_tsv(records: Iterator[Tuple[URIRef, str, torch.Tensor]], output: str) -> None:
+def write_tsv(records: Iterator[Tuple[URIRef, str, str, torch.Tensor]], output: str) -> None:
      with open(output, 'w') as f:
         writer = csv.writer(f, delimiter='\t')
         writer.writerow(['iri', 'representation', 'embedding'])
-        for subj, repr, embedding in records:
+        for subj, label, repr, embedding in records:
             writer.writerow([subj.replace('\n', ' ').replace('\r', ' '), repr, np.array2string(embedding, separator=', ').replace('\n', '')])
 
 
-def write_json(records: Iterator[Tuple[URIRef, str, torch.Tensor]], output: str, graph_name: str) -> None:
+def write_json(records: Iterator[Tuple[URIRef, str, str, torch.Tensor]], output: str, graph_name: str) -> None:
      idx = 0
      with open(output, 'w') as f:
         f.write('{ "points": [\n')
-        for subj, repr, embedding in records:
+        for subj, label, repr, embedding in records:
             idx += 1
             if idx > 1:
                 f.write(",\n")
             embedded_dict = {
                 "id": idx,
                 "vector": embedding.tolist(),
-                "payload": {"graph": graph_name, "iri": subj, "label": repr}
+                "payload": {"graph": graph_name, "iri": subj, "label": label, "repr": repr}
             }
             json.dump(embedded_dict, f, indent=3)
         f.write(']}')
 
 
-def write_qdrant(records: Iterator[Tuple[URIRef, str, torch.Tensor]], url, collection_name, graph_name):
+def write_qdrant(records: Iterator[Tuple[URIRef, str, str, torch.Tensor]], url, collection_name, graph_name):
     # idx is to keep track of point ids for the Qdrant DB
     # inserts they need to be unique and not reset when performing
     # chunking of data
@@ -166,13 +166,13 @@ def write_qdrant(records: Iterator[Tuple[URIRef, str, torch.Tensor]], url, colle
                                     vectors_config=models.VectorParams(size=384, distance=models.Distance.COSINE))
     for chunk in itertools.batched(records, 1000):
         points = []
-        for subj, repr, embedding in chunk:
+        for subj, label, repr, embedding in chunk:
             idx += 1
             points.append(
             models.PointStruct(
                 id=idx,  # Unique ID for each point
                 vector=embedding,
-                payload={"graph": graph_name, "iri": subj, "label": repr}  # Add metadata (payload)
+                payload={"graph": graph_name, "iri": subj, "label": label, "repr": repr}  # Add metadata (payload)
             )
         )
         client.upsert(collection_name=collection_name, points=points)
@@ -221,7 +221,7 @@ def label_from_values(subject: URIRef, data: dict[URIRef, list[Identifier]]) -> 
     return prettify_from_iri(subject)
 
 
-def representation_for_subject(subject: URIRef, data: dict[URIRef, list[Identifier]], doc: HDTDocument, conf: dict[str, set[str]]) -> str:
+def representation_for_subject(subject: URIRef, data: dict[URIRef, list[Identifier]], doc: HDTDocument, conf: dict[str, set[str]]) -> Tuple[str, str]:
     types = data.get(RDF.type, [])
     labeled_types = [ (t, lookup_label(t)) for t in types ]
     parents = data.get(RDFS.subClassOf, [])
@@ -244,7 +244,7 @@ def representation_for_subject(subject: URIRef, data: dict[URIRef, list[Identifi
                     container.append(str(o))
     aka_text = f". Also known as {'; '.join(extra_labels)}." if extra_labels else ''
     desc_text = '. ' + '. '.join(descriptions) if descriptions else ''
-    return f"{label_and_types}{aka_text}{desc_text}"
+    return subject_label, f"{label_and_types}{aka_text}{desc_text}"
 
 
 def stream_by_subject(doc: HDTDocument, conf: dict[str, list[str]]) -> Iterator[Tuple[URIRef, Dict[URIRef, list[Identifier]]]]:
@@ -279,9 +279,9 @@ def main(input_file: pathlib.Path, config_file: pathlib.Path, mode: str, output:
     lookup_label.predicates = [ URIRef(p) for p in conf['label'] ] # type: ignore
     def gen():
         for subj, data in stream_by_subject(doc, conf):
-            repr = representation_for_subject(subj, data, doc, conf_sets)
+            label, repr = representation_for_subject(subj, data, doc, conf_sets)
             embedding = model.encode(repr)
-            yield subj, repr, embedding
+            yield subj, label, repr, embedding
     if mode == 'tsv':
         write_tsv(gen(), output)
     elif mode == 'json':
