@@ -308,9 +308,9 @@ if __name__ == '__main__':
                         help='Optional cap on number of types to append.')
 
     args = parser.parse_args()
-    if args.mode.lower == "qdrant" and args.collection_name is None:
+    if args.mode.lower() == "qdrant" and args.collection_name is None:
         parser.error("--collection-name is required when outputting to Qdrant.")
-    if args.mode.lower in {"json", "qdrant"} and args.graph_name is None:
+    if args.mode.lower() in {"json", "qdrant"} and args.graph_name is None:
         parser.error("--graph-name is required when outputting to JSON or Qdrant.")
 
     main(
