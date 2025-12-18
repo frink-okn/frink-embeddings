@@ -161,13 +161,6 @@ def write_qdrant(
     collection_name,
     graph_name,
 ):
-    # idx is to keep track of point ids for the Qdrant DB
-    # inserts they need to be unique and not reset when performing
-    # chunking of data
-    # if adding data to an existing Qdrant collection, this number
-    # must be set to the integer point id in the collection - it will
-    # be incremented by 1 when it is used.
-    idx = 0
     # connect to Qdrant client
     client = QdrantClient(url=url, timeout=60)
     if not client.collection_exists(collection_name):
@@ -176,28 +169,40 @@ def write_qdrant(
         client.create_collection(
             collection_name=collection_name,
             vectors_config=models.VectorParams(
-                size=384, distance=models.Distance.COSINE
+                size=384,
+                distance=models.Distance.COSINE,
+                on_disk=True,  # Store original vectors on disk
+            ),
+            quantization_config=models.BinaryQuantization(
+                binary=models.BinaryQuantizationConfig(
+                    always_ram=True,  # Keep quantized vectors in RAM
+                )
+            ),
+            optimizers_config=models.OptimizersConfigDiff(
+                max_segment_size=5_000_000,  # Create larger segments for faster search
+            ),
+            hnsw_config=models.HnswConfigDiff(
+                m=6,  # Lower m to reduce memory usage
+                on_disk=False,  # Keep the HNSW index graph in RAM
             ),
         )
-    for chunk in itertools.batched(records, 1000):
-        points = []
-        for subj, label, repr, embedding in chunk:
-            idx += 1
-            points.append(
-                models.PointStruct(
-                    id=idx,  # Unique ID for each point
-                    vector=embedding,
-                    payload={
-                        "graph": graph_name,
-                        "iri": subj,
-                        "label": label,
-                        "repr": repr,
-                    },  # Add metadata (payload)
+    for chunk in itertools.batched(records, 100000):
+        vectors, payloads = zip(
+            *[
+                (
+                    embedding,
+                    {"graph": graph_name, "iri": subj, "label": label, "repr": repr},
                 )
-            )
-        client.upsert(collection_name=collection_name, points=points)
-        logger.info(f"Saved embeddings to Qdrant collection '{collection_name}'.")
-        logger.info(f"last point id was {points[-1].id}")
+                for subj, label, repr, embedding in chunk
+            ]
+        )
+        client.upload_collection(
+            collection_name=collection_name,
+            vectors=vectors,
+            payload=payloads,
+            batch_size=256,
+            parallel=4,
+        )
 
 
 def is_uri(term):
@@ -328,18 +333,30 @@ def main(
     lookup_label.doc = doc  # type: ignore
     lookup_label.predicates = [URIRef(p) for p in conf["label"]]  # type: ignore
 
-    def gen():
+    def gen_repr():
         for subj, data in stream_by_subject(doc, conf):
             label, repr = representation_for_subject(subj, data, doc, conf_sets)
-            embedding = model.encode(repr)
-            yield subj, label, repr, embedding
+            yield subj, label, repr
+
+    def gen(payloads: Iterator[Tuple[URIRef, str, str]]):
+        for batch in itertools.batched(payloads, 10000):
+            subjs, labels, reprs = zip(*batch)
+            # Vectorized Encode (Massive Speedup)
+            embeddings = model.encode(
+                list(reprs),
+                batch_size=len(batch),
+                show_progress_bar=False,
+            )
+            # Yield individually to maintain compatibility with existing write_tsv/write_json
+            for i in range(len(batch)):
+                yield subjs[i], labels[i], reprs[i], embeddings[i]
 
     if mode == "tsv":
-        write_tsv(gen(), output)
+        write_tsv(gen(gen_repr()), output)
     elif mode == "json":
-        write_json(gen(), output, graph_name)
+        write_json(gen(gen_repr()), output, graph_name)
     else:
-        write_qdrant(gen(), output, collection_name, graph_name)
+        write_qdrant(gen(gen_repr()), output, collection_name, graph_name)
 
 
 if __name__ == "__main__":
