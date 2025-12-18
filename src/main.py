@@ -326,6 +326,7 @@ def main(
     type_aware: bool = False,
     types_json: Optional[pathlib.Path] = None,
     max_types: Optional[int] = None,
+    batch_size: int = 10000,
 ):
     logger.info(f"input: {input_file}  config: {config_file}")
     conf = {}
@@ -344,7 +345,7 @@ def main(
             yield subj, label, repr
 
     def gen(payloads: Iterator[Tuple[URIRef, str, str]]):
-        for batch in itertools.batched(payloads, 10000):
+        for batch in itertools.batched(payloads, batch_size):
             subjs, labels, reprs = zip(*batch)
             # Vectorized Encode (Massive Speedup)
             embeddings = model.encode(
@@ -424,6 +425,13 @@ if __name__ == "__main__":
         default=None,
         help="Optional cap on number of types to append.",
     )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        required=False,
+        default=10000,
+        help="Batch size for processing embeddings (default: 10000). Use around 500-1000 for running on a laptop.",
+    )
 
     args = parser.parse_args()
     if args.mode.lower() == "qdrant" and args.collection_name is None:
@@ -441,4 +449,5 @@ if __name__ == "__main__":
         type_aware=bool(args.type_aware),
         types_json=args.types_json,
         max_types=args.max_types,
+        batch_size=args.batch_size,
     )
