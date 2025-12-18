@@ -11,3 +11,8 @@ dependencies = [
     "rdflib-hdt==3.1",
     "sentence-transformers==4.1.0",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14.9",
+]
