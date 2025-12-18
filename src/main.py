@@ -430,7 +430,7 @@ if __name__ == "__main__":
         type=int,
         required=False,
         default=10000,
-        help="Batch size for processing embeddings (default: 10000). Use smaller values for laptops, larger for compute clusters.",
+        help="Batch size for processing embeddings (default: 10000). Use around 500-1000 for running on a laptop.",
     )
 
     args = parser.parse_args()
