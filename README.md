@@ -1,8 +1,10 @@
 # frink-embeddings
 
+This project is built and run using [uv](https://docs.astral.sh/uv/).
+
 ### Example usage
 ```
-usage: python main.py [-h] -i INPUT -c CONF [-q QDRANT_URL] [--tsv] [--json]
+usage: uv run main.py [-h] -i INPUT -c CONF [-q QDRANT_URL] [--tsv] [--json]
 
 frink-embeddings
 
