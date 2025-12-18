@@ -186,6 +186,7 @@ def write_qdrant(
                 on_disk=False,  # Keep the HNSW index graph in RAM
             ),
         )
+    total_uploaded = 0
     for chunk in itertools.batched(records, 100000):
         vectors, payloads = zip(
             *[
@@ -202,6 +203,10 @@ def write_qdrant(
             payload=payloads,
             batch_size=256,
             parallel=4,
+        )
+        total_uploaded += len(vectors)
+        logger.info(
+            f"Uploaded batch of {len(vectors)} embeddings to Qdrant collection '{collection_name}' (total: {total_uploaded})"
         )
 
 
